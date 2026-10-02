@@ -12,7 +12,7 @@ let package = Package(
         .testTarget(
             name: "BridgeSDKTests",
             dependencies: ["BridgeSDK"],
-            resources: [.copy("test-vectors.json")]
+            resources: [.copy("test-vectors.json"), .copy("conformance-vectors.json")]
         ),
     ]
 )
