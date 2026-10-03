@@ -1,7 +1,7 @@
 import XCTest
-@testable import BridgeSDK
+@testable import StraitSDK
 
-/// Port of sdk-react-native/test/bridge.test.ts: the client against a fake
+/// Port of sdk-react-native/test/strait.test.ts: the client against a fake
 /// engine + clock. The fake transport answers synchronously and callbacks run
 /// inline (`callbackQueue: nil`), so every scenario is deterministic.
 
@@ -11,7 +11,7 @@ private let device = DeviceFields(screenWidth: 411, pixelRatio: 2.625, language:
 
 /// Fake engine: routes by path, records every call. `modes` overrides how a
 /// path answers (offline, never, or a status code) and can change mid-test.
-final class FakeEngine: BridgeTransport {
+final class FakeEngine: StraitTransport {
     enum Mode {
         case offline, hang
         case status(Int)
@@ -29,7 +29,7 @@ final class FakeEngine: BridgeTransport {
 
     init(_ routes: [String: [String: Any]] = [:]) { self.routes = routes }
 
-    func send(_ request: URLRequest, completion: @escaping (Result<BridgeHTTPResponse, Error>) -> Void) {
+    func send(_ request: URLRequest, completion: @escaping (Result<StraitHTTPResponse, Error>) -> Void) {
         let url = request.url!
         let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         calls.append(Call(method: request.httpMethod ?? "GET", path: url.path, query: url.query, body: body))
@@ -39,13 +39,13 @@ final class FakeEngine: BridgeTransport {
         case .hang?: return
         case let .status(code)?:
             let payload = routes[url.path] ?? [:]
-            return completion(.success(BridgeHTTPResponse(status: code, data: try! JSONSerialization.data(withJSONObject: payload))))
+            return completion(.success(StraitHTTPResponse(status: code, data: try! JSONSerialization.data(withJSONObject: payload))))
         case nil: break
         }
         guard let payload = routes[url.path] else {
-            return completion(.success(BridgeHTTPResponse(status: 404, data: Data())))
+            return completion(.success(StraitHTTPResponse(status: 404, data: Data())))
         }
-        completion(.success(BridgeHTTPResponse(status: 200, data: try! JSONSerialization.data(withJSONObject: payload))))
+        completion(.success(StraitHTTPResponse(status: 200, data: try! JSONSerialization.data(withJSONObject: payload))))
     }
 
     func calls(to path: String) -> [Call] { calls.filter { $0.path == path } }
@@ -60,7 +60,7 @@ final class Harness {
     let clock: FakeClock
     let engine: FakeEngine
     let storage: MemoryStorage
-    let bridge: BridgeLinks
+    let strait: StraitLinks
     var events: [LinkEvent] = []
 
     init(_ engine: FakeEngine, storage: MemoryStorage = MemoryStorage(), linkHosts: [String] = []) {
@@ -68,16 +68,16 @@ final class Harness {
         self.storage = storage
         let clock = FakeClock()
         self.clock = clock
-        bridge = BridgeLinks(BridgeLinksConfig(
+        strait = StraitLinks(StraitLinksConfig(
             publishableKey: PK, endpoint: ENDPOINT, linkHosts: linkHosts, storage: storage, transport: engine,
             now: { clock.t }, device: { device }, callbackQueue: nil, observeLifecycle: false
         ))
-        bridge.onLink { [unowned self] in self.events.append($0) }
+        strait.onLink { [unowned self] in self.events.append($0) }
     }
 
     func start(_ initial: String? = nil) {
         var done = false
-        bridge.start(initialURL: initial.flatMap(URL.init(string:))) { done = true }
+        strait.start(initialURL: initial.flatMap(URL.init(string:))) { done = true }
         XCTAssertTrue(done, "start completes synchronously with the fake engine")
     }
 }
@@ -115,11 +115,11 @@ final class DirectLinkTests: XCTestCase {
     func testBackgroundResumeThenLink() {
         let h = Harness(FakeEngine(resolved))
         h.start()
-        h.bridge.onAppState(.background)
+        h.strait.onAppState(.background)
         h.clock.advance(60_000)
-        h.bridge.onAppState(.active)
+        h.strait.onAppState(.active)
         h.clock.advance(300)
-        h.bridge.handle(url: URL(string: "https://links.test/sale")!)
+        h.strait.handle(url: URL(string: "https://links.test/sale")!)
         XCTAssertEqual(h.events.last?.kind, .direct)
         XCTAssertEqual(h.events.last?.appState, .background)
         XCTAssertEqual(h.events.last?.matched, true)
@@ -128,10 +128,10 @@ final class DirectLinkTests: XCTestCase {
     func testBackgroundLinkBeforeActive() {
         let h = Harness(FakeEngine(resolved))
         h.start()
-        h.bridge.onAppState(.background)
+        h.strait.onAppState(.background)
         h.clock.advance(60_000)
-        h.bridge.handle(url: URL(string: "https://links.test/sale")!) // delivered before didBecomeActive
-        h.bridge.onAppState(.active)
+        h.strait.handle(url: URL(string: "https://links.test/sale")!) // delivered before didBecomeActive
+        h.strait.onAppState(.active)
         XCTAssertEqual(h.events.last?.appState, .background)
     }
 
@@ -139,11 +139,11 @@ final class DirectLinkTests: XCTestCase {
         let h = Harness(FakeEngine(resolved))
         h.start()
         h.clock.advance(30_000)
-        h.bridge.onAppState(.inactive)
+        h.strait.onAppState(.inactive)
         h.clock.advance(40)
-        h.bridge.handle(url: URL(string: "https://links.test/sale")!)
+        h.strait.handle(url: URL(string: "https://links.test/sale")!)
         h.clock.advance(30)
-        h.bridge.onAppState(.active)
+        h.strait.onAppState(.active)
         XCTAssertEqual(h.events.last?.appState, .foreground)
     }
 
@@ -151,21 +151,21 @@ final class DirectLinkTests: XCTestCase {
         let h = Harness(FakeEngine(resolved))
         h.start()
         h.clock.advance(30_000)
-        h.bridge.handle(url: URL(string: "https://links.test/sale")!)
+        h.strait.handle(url: URL(string: "https://links.test/sale")!)
         XCTAssertEqual(h.events.last?.appState, .foreground)
     }
 
     func testExplicitTimestampsForAppState() {
         let h = Harness(FakeEngine(resolved))
         h.start()
-        h.bridge.onAppState(.background, at: h.clock.t - 5_000)
-        h.bridge.handle(urlString: "https://links.test/sale")
+        h.strait.onAppState(.background, at: h.clock.t - 5_000)
+        h.strait.handle(urlString: "https://links.test/sale")
         XCTAssertEqual(h.events.last?.appState, .background)
     }
 
     func testCustomSchemeCarriesDestinationWithoutNetwork() throws {
         let h = Harness(FakeEngine())
-        h.start("bridgelink://shop.example/p/42?color=red")
+        h.start("straitlink://shop.example/p/42?color=red")
         let e = try XCTUnwrap(h.events.first)
         XCTAssertEqual(e.kind, .direct)
         XCTAssertEqual(e.route, .customScheme)
@@ -180,7 +180,7 @@ final class DirectLinkTests: XCTestCase {
     func testVerifiedLinkOnOwnSiteIsTheDestination() throws {
         let h = Harness(FakeEngine())
         h.start()
-        h.bridge.handle(url: URL(string: "https://shop.example/p/7?x=1+2")!)
+        h.strait.handle(url: URL(string: "https://shop.example/p/7?x=1+2")!)
         let e = try XCTUnwrap(h.events.last)
         XCTAssertEqual(e.route, .appLink)
         XCTAssertTrue(e.matched)
@@ -192,8 +192,8 @@ final class DirectLinkTests: XCTestCase {
     func testCustomDomainLinkHostIsResolved() throws {
         let h = Harness(FakeEngine(resolved), linkHosts: ["go.brand.com", "https://Links2.Brand.com"])
         h.start()
-        h.bridge.handle(url: URL(string: "https://GO.brand.com/sale")!)
-        h.bridge.handle(url: URL(string: "https://links2.brand.com/sale")!)
+        h.strait.handle(url: URL(string: "https://GO.brand.com/sale")!)
+        h.strait.handle(url: URL(string: "https://links2.brand.com/sale")!)
         XCTAssertEqual(h.engine.calls(to: "/v1/resolve").count, 2)
         XCTAssertEqual(h.events.last?.url, "https://shop.example/p/42?color=red")
     }
@@ -223,7 +223,7 @@ final class DirectLinkTests: XCTestCase {
     func testInvalidUrl() throws {
         let h = Harness(FakeEngine())
         h.start()
-        h.bridge.handle(urlString: "not a url")
+        h.strait.handle(urlString: "not a url")
         let e = try XCTUnwrap(h.events.last)
         XCTAssertFalse(e.matched)
         XCTAssertEqual(e.reason, "invalid_url")
@@ -231,39 +231,39 @@ final class DirectLinkTests: XCTestCase {
 
     func testLateSubscribersGetReplay() throws {
         let h = Harness(FakeEngine())
-        h.start("bridgelink://shop.example/cart")
+        h.start("straitlink://shop.example/cart")
         var late: [LinkEvent] = []
-        h.bridge.onLink { late.append($0) }
+        h.strait.onLink { late.append($0) }
         XCTAssertEqual(late.count, 1)
         XCTAssertEqual(late.first?.path, "/cart")
     }
 
     func testUnsubscribe() {
         let h = Harness(FakeEngine())
-        h.storage.setItem("bridge.deferredChecked", "1") // not a first launch
+        h.storage.setItem("strait.deferredChecked", "1") // not a first launch
         h.start()
         var got = 0
-        let sub = h.bridge.onLink { _ in got += 1 }
+        let sub = h.strait.onLink { _ in got += 1 }
         sub.cancel()
-        h.bridge.handle(urlString: "bridgelink://shop.example/cart")
+        h.strait.handle(urlString: "straitlink://shop.example/cart")
         XCTAssertEqual(got, 0)
         XCTAssertEqual(h.events.count, 1)
     }
 
     func testLinkStartFiresBeforeEventWithSameId() throws {
         let h = Harness(FakeEngine(resolved))
-        h.storage.setItem("bridge.deferredChecked", "1") // not a first launch
+        h.storage.setItem("strait.deferredChecked", "1") // not a first launch
         var log: [String] = []
         var startId: String?
-        h.bridge.onLinkStart { s in
+        h.strait.onLinkStart { s in
             log.append("start")
             startId = s.id
             XCTAssertEqual(s.kind, .direct)
             XCTAssertEqual(s.rawUrl, "https://links.test/sale")
         }
-        h.bridge.onLink { _ in log.append("event") }
+        h.strait.onLink { _ in log.append("event") }
         h.start()
-        h.bridge.handle(url: URL(string: "https://links.test/sale")!)
+        h.strait.handle(url: URL(string: "https://links.test/sale")!)
         XCTAssertEqual(log, ["start", "event"])
         XCTAssertEqual(startId, h.events.last?.id)
     }
@@ -273,9 +273,9 @@ final class DirectLinkTests: XCTestCase {
         h.start()
         let web = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
         web.webpageURL = URL(string: "https://links.test/sale")
-        XCTAssertTrue(h.bridge.handle(userActivity: web))
+        XCTAssertTrue(h.strait.handle(userActivity: web))
         XCTAssertEqual(h.events.last?.linkId, "lnk_42")
-        XCTAssertFalse(h.bridge.handle(userActivity: NSUserActivity(activityType: "com.example.other")))
+        XCTAssertFalse(h.strait.handle(userActivity: NSUserActivity(activityType: "com.example.other")))
     }
 }
 
@@ -287,7 +287,7 @@ final class DeferredLinkTests: XCTestCase {
     func testFirstLaunchFingerprintMatch() throws {
         let h = Harness(FakeEngine(matchHit))
         var starts: [LinkStart] = []
-        h.bridge.onLinkStart { starts.append($0) }
+        h.strait.onLinkStart { starts.append($0) }
         h.start()
         let e = try XCTUnwrap(h.events.first)
         XCTAssertEqual(e.kind, .deferred)
@@ -307,7 +307,7 @@ final class DeferredLinkTests: XCTestCase {
         XCTAssertEqual(body["pixelRatio"] as? Double, 2.625)
         XCTAssertEqual(body["language"] as? String, "en")
         XCTAssertEqual(body["timezone"] as? String, "Asia/Kolkata")
-        XCTAssertEqual(h.storage.getItem("bridge.deferredChecked"), "1")
+        XCTAssertEqual(h.storage.getItem("strait.deferredChecked"), "1")
     }
 
     func testNoMatchIsReported() throws {
@@ -333,10 +333,10 @@ final class DeferredLinkTests: XCTestCase {
 
     func testFirstLaunchOpenedByLinkSkipsDeferredButMarksDone() {
         let h = Harness(FakeEngine(matchHit))
-        h.start("bridgelink://shop.example/cart")
+        h.start("straitlink://shop.example/cart")
         XCTAssertEqual(h.events.map(\.kind), [.direct])
         XCTAssertTrue(h.engine.calls(to: "/v1/match").isEmpty)
-        XCTAssertEqual(h.storage.getItem("bridge.deferredChecked"), "1")
+        XCTAssertEqual(h.storage.getItem("strait.deferredChecked"), "1")
     }
 
     func testNetworkFailure() throws {
@@ -352,11 +352,11 @@ final class DeferredLinkTests: XCTestCase {
 
     func testCheckDeferredReRunsWithoutTouchingFlag() {
         let h = Harness(FakeEngine(matchHit))
-        h.storage.setItem("bridge.deferredChecked", "1")
+        h.storage.setItem("strait.deferredChecked", "1")
         h.start()
         XCTAssertTrue(h.events.isEmpty)
         var got: LinkEvent?
-        h.bridge.checkDeferred { got = $0 }
+        h.strait.checkDeferred { got = $0 }
         XCTAssertEqual(got?.matched, true)
         XCTAssertEqual(got, h.events.last)
     }
@@ -367,7 +367,7 @@ final class FingerprintAndEventTests: XCTestCase {
         let engine = FakeEngine(["/v1/debug/fingerprint": ["extHash": "abc", "coreHash": "def", "inputs": [String: Any]()]])
         let h = Harness(engine)
         var reported: [String: Any]?
-        h.bridge.reportFingerprint { reported = $0 }
+        h.strait.reportFingerprint { reported = $0 }
         XCTAssertEqual(reported?["extHash"] as? String, "abc")
         let post = try XCTUnwrap(engine.calls.first { $0.method == "POST" && $0.path == "/v1/debug/fingerprint" })
         XCTAssertEqual(post.body?["publishableKey"] as? String, PK)
@@ -376,7 +376,7 @@ final class FingerprintAndEventTests: XCTestCase {
         XCTAssertEqual(post.body?["timezone"] as? String, "Asia/Kolkata")
 
         var compared: [String: Any]?
-        h.bridge.compareFingerprint { compared = $0 }
+        h.strait.compareFingerprint { compared = $0 }
         XCTAssertEqual(compared?["coreHash"] as? String, "def")
         let get = try XCTUnwrap(engine.calls.first { $0.method == "GET" && $0.path == "/v1/debug/fingerprint" })
         XCTAssertEqual(get.query, "publishableKey=\(PK)")
@@ -388,7 +388,7 @@ final class FingerprintAndEventTests: XCTestCase {
         engine.offline = true
         let h = Harness(engine)
         var called = false
-        h.bridge.reportFingerprint { XCTAssertNil($0); called = true }
+        h.strait.reportFingerprint { XCTAssertNil($0); called = true }
         XCTAssertTrue(called)
     }
 
@@ -396,7 +396,7 @@ final class FingerprintAndEventTests: XCTestCase {
         let engine = FakeEngine(["/v1/event": ["ok": true]])
         let h = Harness(engine)
         var ok: Bool?
-        h.bridge.trackEvent("purchase", value: 49.99, currency: "USD", linkId: "lnk_42") { ok = $0 }
+        h.strait.trackEvent("purchase", value: 49.99, currency: "USD", linkId: "lnk_42") { ok = $0 }
         XCTAssertEqual(ok, true)
         let body = try XCTUnwrap(engine.calls.last?.body)
         XCTAssertEqual(body["publishableKey"] as? String, PK)
@@ -412,10 +412,10 @@ final class FingerprintAndEventTests: XCTestCase {
         engine.offline = true
         let h = Harness(engine)
         var ok: Bool?
-        h.bridge.trackEvent("purchase") { ok = $0 }
+        h.strait.trackEvent("purchase") { ok = $0 }
         XCTAssertEqual(ok, false)
         let rejected = Harness(FakeEngine()) // 404
-        rejected.bridge.trackEvent("purchase") { ok = $0 }
+        rejected.strait.trackEvent("purchase") { ok = $0 }
         XCTAssertEqual(ok, false)
     }
 }
@@ -433,7 +433,7 @@ private let noMatch: [String: Any] = ["matched": false, "matchMethod": "none"]
 
 private func returning() -> MemoryStorage {
     let s = MemoryStorage()
-    s.setItem("bridge.deferredChecked", "1") // not the first launch
+    s.setItem("strait.deferredChecked", "1") // not the first launch
     return s
 }
 
@@ -443,7 +443,7 @@ private func isOpenId(_ id: String) -> Bool {
 
 private func pending(_ h: Harness) -> Int {
     var n = -1
-    h.bridge.pendingOpenReports { n = $0 }
+    h.strait.pendingOpenReports { n = $0 }
     return n
 }
 
@@ -453,8 +453,8 @@ final class HandOffOpenTests: XCTestCase {
         engine.modes["/v1/open"] = .status(202)
         let h = Harness(engine, storage: returning())
         h.start()
-        h.bridge.onAppState(.background); h.clock.advance(5000); h.bridge.onAppState(.active); h.clock.advance(200)
-        h.bridge.handle(urlString: "bridgelink://shop.example/p/42?color=red&bridge_click=\(CLICK)")
+        h.strait.onAppState(.background); h.clock.advance(5000); h.strait.onAppState(.active); h.clock.advance(200)
+        h.strait.handle(urlString: "straitlink://shop.example/p/42?color=red&strait_click=\(CLICK)")
         let e = try XCTUnwrap(h.events.last)
         XCTAssertEqual(e.route, .customScheme)
         XCTAssertEqual(e.url, "https://shop.example/p/42?color=red")
@@ -481,7 +481,7 @@ final class HandOffOpenTests: XCTestCase {
         let engine = FakeEngine()
         engine.modes["/v1/open"] = .hang
         let h = Harness(engine, storage: returning())
-        h.start("bridgelink://shop.example/p/1?bridge_click=\(CLICK)")
+        h.start("straitlink://shop.example/p/1?strait_click=\(CLICK)")
         XCTAssertEqual(h.events.count, 1)
         XCTAssertEqual(h.events.first?.url, "https://shop.example/p/1")
     }
@@ -533,7 +533,7 @@ final class ShortLinkOpenTests: XCTestCase {
         engine.modes = ["/v1/resolve": .offline, "/v1/open": .offline]
         let h = Harness(engine, storage: returning())
         h.start()
-        h.bridge.handle(urlString: "https://links.test/sale")
+        h.strait.handle(urlString: "https://links.test/sale")
         let e = try XCTUnwrap(h.events.last)
         XCTAssertFalse(e.matched)
         XCTAssertEqual(e.reason, "network")
@@ -541,7 +541,7 @@ final class ShortLinkOpenTests: XCTestCase {
         // network returns; user leaves and comes back
         engine.routes["/v1/open"] = accepted
         engine.modes["/v1/open"] = .status(202)
-        h.bridge.onAppState(.background); h.clock.advance(10_000); h.bridge.onAppState(.active)
+        h.strait.onAppState(.background); h.clock.advance(10_000); h.strait.onAppState(.active)
         let sent = engine.calls(to: "/v1/open").filter { $0.body?["openId"] as? String == e.id }
         let body = try XCTUnwrap(sent.last?.body)
         XCTAssertEqual(body["route"] as? String, "app_link")
@@ -558,16 +558,16 @@ final class OpenQueueTests: XCTestCase {
         engine.modes["/v1/open"] = .status(503)
         let h = Harness(engine, storage: returning())
         h.start()
-        h.bridge.handle(urlString: "bridgelink://a.b/1")
+        h.strait.handle(urlString: "straitlink://a.b/1")
         XCTAssertEqual(pending(h), 1)
         engine.modes["/v1/open"] = .status(429)
         var flushed = false
-        h.bridge.flushOpenReports { flushed = true }
+        h.strait.flushOpenReports { flushed = true }
         XCTAssertTrue(flushed)
         XCTAssertEqual(pending(h), 1)
         engine.routes["/v1/open"] = ["error": "bad"]
         engine.modes["/v1/open"] = .status(400)
-        h.bridge.flushOpenReports()
+        h.strait.flushOpenReports()
         XCTAssertEqual(pending(h), 0)
     }
 
@@ -577,11 +577,11 @@ final class OpenQueueTests: XCTestCase {
         e1.modes["/v1/open"] = .offline
         let first = Harness(e1, storage: storage)
         first.start()
-        first.bridge.handle(urlString: "bridgelink://a.b/1")
-        first.bridge.handle(urlString: "bridgelink://a.b/2")
+        first.strait.handle(urlString: "straitlink://a.b/1")
+        first.strait.handle(urlString: "straitlink://a.b/2")
         XCTAssertEqual(pending(first), 2)
-        XCTAssertNotNil(storage.getItem("bridge.pendingOpens"))
-        first.bridge.stop()
+        XCTAssertNotNil(storage.getItem("strait.pendingOpens"))
+        first.strait.stop()
 
         let e2 = FakeEngine(["/v1/open": accepted])
         let second = Harness(e2, storage: storage)
@@ -595,10 +595,10 @@ final class OpenQueueTests: XCTestCase {
         engine.modes["/v1/open"] = .offline
         let h = Harness(engine, storage: returning())
         h.start()
-        h.bridge.handle(urlString: "bridgelink://a.b/old")
+        h.strait.handle(urlString: "straitlink://a.b/old")
         engine.routes["/v1/open"] = accepted
         engine.modes["/v1/open"] = nil
-        h.bridge.handle(urlString: "bridgelink://a.b/new")
+        h.strait.handle(urlString: "straitlink://a.b/new")
         XCTAssertEqual(pending(h), 0)
         let oldIds = Set(engine.calls(to: "/v1/open").filter { $0.body?["url"] as? String == "https://a.b/old" }
             .compactMap { $0.body?["openId"] as? String })
@@ -608,7 +608,7 @@ final class OpenQueueTests: XCTestCase {
     func testEveryOpenHasItsOwnId() {
         let h = Harness(FakeEngine(["/v1/open": accepted]), storage: returning())
         h.start()
-        for i in 0..<5 { h.bridge.handle(urlString: "bridgelink://a.b/\(i)") }
+        for i in 0..<5 { h.strait.handle(urlString: "straitlink://a.b/\(i)") }
         XCTAssertEqual(Set(h.events.map(\.id)).count, 5)
     }
 }
@@ -621,7 +621,7 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertEqual(engine.calls(to: "/v1/resolve").first?.body?["firstLaunch"] as? Bool, true)
         XCTAssertTrue(engine.calls(to: "/v1/referrer").isEmpty)
         XCTAssertTrue(engine.calls(to: "/v1/match").isEmpty)
-        XCTAssertEqual(h.storage.getItem("bridge.deferredChecked"), "1")
+        XCTAssertEqual(h.storage.getItem("strait.deferredChecked"), "1")
     }
 
     func testFingerprintSendsOpenId() throws {
@@ -647,12 +647,12 @@ final class FirstLaunchTests: XCTestCase {
         first.start()
         XCTAssertEqual(first.events.first?.kind, .deferred)
         XCTAssertEqual(first.events.first?.reason, "network")
-        XCTAssertNil(storage.getItem("bridge.deferredChecked"))
+        XCTAssertNil(storage.getItem("strait.deferredChecked"))
 
         let e2 = FakeEngine(["/v1/match": noMatch])
         Harness(e2, storage: storage).start()
         XCTAssertEqual(e2.calls(to: "/v1/match").count, 1)
-        XCTAssertEqual(storage.getItem("bridge.deferredChecked"), "1")
+        XCTAssertEqual(storage.getItem("strait.deferredChecked"), "1")
 
         let e3 = FakeEngine(["/v1/match": noMatch])
         Harness(e3, storage: storage).start()
@@ -666,7 +666,7 @@ final class FirstLaunchTests: XCTestCase {
         let h = Harness(engine, storage: storage)
         h.start()
         XCTAssertEqual(h.events.first?.reason, "network")
-        XCTAssertNil(storage.getItem("bridge.deferredChecked"))
+        XCTAssertNil(storage.getItem("strait.deferredChecked"))
     }
 
     func testTimestampsAreSentAsWholeMilliseconds() throws {
@@ -675,15 +675,15 @@ final class FirstLaunchTests: XCTestCase {
         let h = Harness(engine)
         h.clock.t = 1_800_000_000_123.75
         h.start()
-        h.bridge.handle(urlString: "https://links.test/sale")
-        h.bridge.handle(urlString: "bridgelink://a.b/1")
+        h.strait.handle(urlString: "https://links.test/sale")
+        h.strait.handle(urlString: "straitlink://a.b/1")
         let bodies = [engine.calls(to: "/v1/match").first?.body, engine.calls(to: "/v1/resolve").first?.body,
                       engine.calls(to: "/v1/open").first?.body]
         for body in bodies {
             let at = try XCTUnwrap(body?["at"] as? NSNumber)
             XCTAssertEqual(at.doubleValue, 1_800_000_000_123)
         }
-        let saved = try XCTUnwrap(h.storage.getItem("bridge.pendingOpens"))
+        let saved = try XCTUnwrap(h.storage.getItem("strait.pendingOpens"))
         XCTAssertTrue(saved.contains("\"at\":1800000000123"), saved)
     }
 
@@ -692,7 +692,7 @@ final class FirstLaunchTests: XCTestCase {
         let h = Harness(engine, storage: returning())
         h.start()
         var got: LinkEvent?
-        h.bridge.checkDeferred { got = $0 }
+        h.strait.checkDeferred { got = $0 }
         XCTAssertNotNil(got)
         XCTAssertEqual(engine.calls(to: "/v1/match").count, 1)
         XCTAssertNil(engine.calls(to: "/v1/match").first?.body?["openId"])

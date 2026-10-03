@@ -1,6 +1,6 @@
 import Foundation
 
-/// Bridge deferred-match signature — Swift port of shared-spec/RECIPE.md.
+/// Strait deferred-match signature — Swift port of shared-spec/RECIPE.md.
 /// MUST be byte-identical to the JS reference (server + JS/Dart SDKs). The
 /// golden vectors are the contract.
 ///

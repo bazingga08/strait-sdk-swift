@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0
+
+**Renamed to Strait** (breaking, clean break; no aliases for the old names).
+
+- Package, product, module and targets: `BridgeSDK` → `StraitSDK`
+  (`import StraitSDK`), test target `StraitSDKTests`. Repo / package identity
+  `strait-sdk-swift`.
+- Types: `Bridge` → `Strait`, `BridgeConfig` → `StraitConfig`, `BridgeLinks` →
+  `StraitLinks`, `BridgeLinksConfig` → `StraitLinksConfig`, `BridgeStorage` →
+  `StraitStorage`, `BridgeTransport` → `StraitTransport`, `BridgeHTTPResponse` →
+  `StraitHTTPResponse`, `BridgeSubscription` → `StraitSubscription`;
+  `parseBridgeLink` / `parseBridgeClick` → `parseStraitLink` / `parseStraitClick`.
+- Wire params: `strait_link` and `strait_click` only.
+- Storage keys: `strait.deferredChecked`, `strait.pendingOpens` (old values are ignored).
+- brand.json is final (Strait, https://usestrait.com, strait.to, Strait Technologies).
+- Shared vectors (`conformance-vectors.json`) follow the rename.
+
 ## 0.4.0
 
 - Every link open is reported exactly once (shared-spec/SDK-CONTRACT.md B14).

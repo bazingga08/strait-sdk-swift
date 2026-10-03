@@ -1,7 +1,7 @@
 import XCTest
-@testable import BridgeSDK
+@testable import StraitSDK
 
-/// shared-spec/conformance-vectors.json — the same cases every Bridge SDK runs
+/// shared-spec/conformance-vectors.json — the same cases every Strait SDK runs
 /// (generated from sdk-react-native/src/core.ts). Do not edit the JSON here.
 final class ConformanceTests: XCTestCase {
     var vectors: [String: Any] = [:]
@@ -39,17 +39,17 @@ final class ConformanceTests: XCTestCase {
         }
     }
 
-    func testParseBridgeLink() throws {
+    func testParseStraitLink() throws {
         for v in try cases("referrer") {
             let input = v["input"] as? String // null → nil
-            XCTAssertEqual(parseBridgeLink(input), v["expected"] as? String, String(describing: input))
+            XCTAssertEqual(parseStraitLink(input), v["expected"] as? String, String(describing: input))
         }
     }
 
-    func testParseBridgeClick() throws {
+    func testParseStraitClick() throws {
         for v in try cases("referrerClick") {
             let input = v["input"] as? String // null → nil
-            XCTAssertEqual(parseBridgeClick(input), v["expected"] as? String, String(describing: input))
+            XCTAssertEqual(parseStraitClick(input), v["expected"] as? String, String(describing: input))
         }
     }
 

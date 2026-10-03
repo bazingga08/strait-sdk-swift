@@ -10,7 +10,7 @@ public struct MatchResult: Decodable, Equatable {
     public static let none = MatchResult(matched: false, longUrl: nil, linkId: nil, matchMethod: "none")
 }
 
-public struct BridgeConfig {
+public struct StraitConfig {
     /// Workspace publishable key (`bk_pub_live_…` / `bk_pub_test_…`) from
     /// Dashboard → Get started. Safe to ship in apps; never use your secret
     /// key (`bk_live_…`) here.
@@ -22,12 +22,12 @@ public struct BridgeConfig {
     }
 }
 
-public enum Bridge {
-    /// Call once on first launch. Asks Bridge whether this device recently
+public enum Strait {
+    /// Call once on first launch. Asks Strait whether this device recently
     /// clicked a link, and returns the deferred destination. Never throws —
     /// returns `.none` on any error. The server adds the observed IP.
     public static func resolveDeferredLink(
-        _ config: BridgeConfig,
+        _ config: StraitConfig,
         session: URLSession = .shared
     ) async -> MatchResult {
         let device = collectDevice()

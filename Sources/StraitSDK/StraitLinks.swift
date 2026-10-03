@@ -49,13 +49,13 @@ public struct LinkStart: Equatable {
 
 /// Persistent key/value storage for the once-per-install flag and the
 /// pending open reports.
-public protocol BridgeStorage {
+public protocol StraitStorage {
     func getItem(_ key: String) -> String?
     func setItem(_ key: String, _ value: String)
 }
 
 /// The default storage.
-public struct UserDefaultsStorage: BridgeStorage {
+public struct UserDefaultsStorage: StraitStorage {
     public let defaults: UserDefaults
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
     public func getItem(_ key: String) -> String? { defaults.string(forKey: key) }
@@ -63,7 +63,7 @@ public struct UserDefaultsStorage: BridgeStorage {
 }
 
 /// In-memory storage (tests, or apps that persist the flag themselves).
-public final class MemoryStorage: BridgeStorage {
+public final class MemoryStorage: StraitStorage {
     private let lock = NSLock()
     private var data: [String: String] = [:]
     public init() {}
@@ -77,7 +77,7 @@ public final class MemoryStorage: BridgeStorage {
     }
 }
 
-public struct BridgeHTTPResponse {
+public struct StraitHTTPResponse {
     public let status: Int
     public let data: Data
     public init(status: Int, data: Data) {
@@ -87,25 +87,25 @@ public struct BridgeHTTPResponse {
 }
 
 /// HTTP behind one method so tests (and custom stacks) can swap it.
-public protocol BridgeTransport {
-    func send(_ request: URLRequest, completion: @escaping (Result<BridgeHTTPResponse, Error>) -> Void)
+public protocol StraitTransport {
+    func send(_ request: URLRequest, completion: @escaping (Result<StraitHTTPResponse, Error>) -> Void)
 }
 
 /// The default transport.
-public struct URLSessionTransport: BridgeTransport {
+public struct URLSessionTransport: StraitTransport {
     public let session: URLSession
     public init(session: URLSession = .shared) { self.session = session }
-    public func send(_ request: URLRequest, completion: @escaping (Result<BridgeHTTPResponse, Error>) -> Void) {
+    public func send(_ request: URLRequest, completion: @escaping (Result<StraitHTTPResponse, Error>) -> Void) {
         session.dataTask(with: request) { data, response, error in
             if let error = error { return completion(.failure(error)) }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            completion(.success(BridgeHTTPResponse(status: status, data: data ?? Data())))
+            completion(.success(StraitHTTPResponse(status: status, data: data ?? Data())))
         }.resume()
     }
 }
 
 /// Returned by `onLink` / `onLinkStart`; call `cancel()` to unsubscribe.
-public final class BridgeSubscription {
+public final class StraitSubscription {
     private var onCancel: (() -> Void)?
     init(_ onCancel: @escaping () -> Void) { self.onCancel = onCancel }
     public func cancel() {
@@ -114,17 +114,17 @@ public final class BridgeSubscription {
     }
 }
 
-public struct BridgeLinksConfig {
+public struct StraitLinksConfig {
     /// Workspace publishable key (`bk_pub_live_…`), Dashboard → Get started.
     public var publishableKey: String
-    /// Your Bridge link host, e.g. https://go.yourbrand.com
+    /// Your Strait link host, e.g. https://go.yourbrand.com
     public var endpoint: String
     /// Extra hosts that serve your short links (custom domains), as
     /// `https://go.brand.com` or `go.brand.com`.
     public var linkHosts: [String]
-    /// Persists `bridge.deferredChecked` and `bridge.pendingOpens`. Default: `UserDefaults.standard`.
-    public var storage: BridgeStorage
-    public var transport: BridgeTransport
+    /// Persists `strait.deferredChecked` and `strait.pendingOpens`. Default: `UserDefaults.standard`.
+    public var storage: StraitStorage
+    public var transport: StraitTransport
     /// Clock in ms since 1970.
     public var now: () -> Double
     /// Device fields for the deferred match / fingerprint report.
@@ -141,8 +141,8 @@ public struct BridgeLinksConfig {
         publishableKey: String,
         endpoint: String,
         linkHosts: [String] = [],
-        storage: BridgeStorage = UserDefaultsStorage(),
-        transport: BridgeTransport = URLSessionTransport(),
+        storage: StraitStorage = UserDefaultsStorage(),
+        transport: StraitTransport = URLSessionTransport(),
         now: @escaping () -> Double = { Date().timeIntervalSince1970 * 1000 },
         device: @escaping () -> DeviceFields = { Thread.isMainThread ? collectDevice() : DispatchQueue.main.sync(execute: collectDevice) },
         platform: String = "ios",
@@ -162,21 +162,21 @@ public struct BridgeLinksConfig {
     }
 }
 
-enum BridgeLinksError: Error {
+enum StraitLinksError: Error {
     case badEndpoint, badBody
 }
 
 // MARK: - Client
 
-/// The Bridge deep-link client: direct links (Universal Links, custom scheme),
+/// The Strait deep-link client: direct links (Universal Links, custom scheme),
 /// deferred links (once per install) and analytics. A port of the React
-/// Native `createBridge`; never throws to the app.
-public final class BridgeLinks {
-    public static let deferredFlag = "bridge.deferredChecked"
+/// Native `createStrait`; never throws to the app.
+public final class StraitLinks {
+    public static let deferredFlag = "strait.deferredChecked"
     /// Open reports that didn't get through, retried later (JSON array).
-    public static let queueKey = "bridge.pendingOpens"
+    public static let queueKey = "strait.pendingOpens"
 
-    private let config: BridgeLinksConfig
+    private let config: StraitLinksConfig
     private let base: String
     private let linkHosts: [String]
     private let tracker = AppStateTracker()
@@ -192,7 +192,7 @@ public final class BridgeLinks {
     private var flushWaiters: [() -> Void]?
     private var observers: [NSObjectProtocol] = []
 
-    public init(_ config: BridgeLinksConfig) {
+    public init(_ config: StraitLinksConfig) {
         self.config = config
         var base = config.endpoint
         while base.hasSuffix("/") { base.removeLast() }
@@ -297,27 +297,27 @@ public final class BridgeLinks {
 
     /// Every link event, including ones that happened before you subscribed.
     @discardableResult
-    public func onLink(_ cb: @escaping (LinkEvent) -> Void) -> BridgeSubscription {
+    public func onLink(_ cb: @escaping (LinkEvent) -> Void) -> StraitSubscription {
         let (token, past): (Int, [LinkEvent]) = withLock {
             nextToken += 1
             listeners.append((nextToken, cb))
             return (nextToken, events)
         }
         if !past.isEmpty { deliver { past.forEach(cb) } }
-        return BridgeSubscription { [weak self] in
+        return StraitSubscription { [weak self] in
             self?.withLock { self?.listeners.removeAll { $0.0 == token } }
         }
     }
 
     /// A link just arrived and is being resolved (for a loading state).
     @discardableResult
-    public func onLinkStart(_ cb: @escaping (LinkStart) -> Void) -> BridgeSubscription {
+    public func onLinkStart(_ cb: @escaping (LinkStart) -> Void) -> StraitSubscription {
         let token: Int = withLock {
             nextToken += 1
             startListeners.append((nextToken, cb))
             return nextToken
         }
-        return BridgeSubscription { [weak self] in
+        return StraitSubscription { [weak self] in
             self?.withLock { self?.startListeners.removeAll { $0.0 == token } }
         }
     }
@@ -584,13 +584,13 @@ public final class BridgeLinks {
 
     /// JSON over the transport (bodies built with JSONSerialization — B11).
     private func call(_ method: String, _ path: String, _ body: [String: Any]?, completion: @escaping (Result<Reply, Error>) -> Void) {
-        guard let url = URL(string: base + path) else { return completion(.failure(BridgeLinksError.badEndpoint)) }
+        guard let url = URL(string: base + path) else { return completion(.failure(StraitLinksError.badEndpoint)) }
         var req = URLRequest(url: url)
         req.httpMethod = method
         if let body = body {
             guard JSONSerialization.isValidJSONObject(body),
                   let data = try? JSONSerialization.data(withJSONObject: body) else {
-                return completion(.failure(BridgeLinksError.badBody))
+                return completion(.failure(StraitLinksError.badBody))
             }
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = data
@@ -628,7 +628,7 @@ public final class BridgeLinks {
 }
 
 /// One app open as reported to POST /v1/open (contract B14); also the
-/// stored shape in `bridge.pendingOpens`.
+/// stored shape in `strait.pendingOpens`.
 struct OpenReport: Codable {
     var openId: String
     var kind: String

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pure, platform-free link logic — a 1:1 port of `sdk-react-native/src/core.ts`.
-/// `Tests/BridgeSDKTests/conformance-vectors.json` is the cross-language
+/// `Tests/StraitSDKTests/conformance-vectors.json` is the cross-language
 /// contract (see shared-spec/SDK-CONTRACT.md).
 
 /// How the app received a link.
@@ -80,7 +80,7 @@ func decode(_ s: String) -> String {
 
 private let bareHost = try! NSRegularExpression(pattern: "^[a-z0-9.-]+(:\\d+)?$", options: [.caseInsensitive])
 
-/// The hosts that serve Bridge short links: the endpoint's host plus each of
+/// The hosts that serve Strait short links: the endpoint's host plus each of
 /// `linkHosts`, given as URLs (`https://go.brand.com`) or bare hosts
 /// (`go.brand.com`, `localhost:3000`). Lower-cased, de-duplicated in order;
 /// blanks and anything with a path or spaces are ignored.
@@ -95,15 +95,15 @@ public func normalizeLinkHosts(_ endpoint: String, _ linkHosts: [String] = []) -
     return out
 }
 
-/// The `bridge_link` id inside a Play Install Referrer string, or nil.
-public func parseBridgeLink(_ referrer: String?) -> String? {
-    referrerParam(referrer, "bridge_link")
+/// The `strait_link` id inside a Play Install Referrer string, or nil.
+public func parseStraitLink(_ referrer: String?) -> String? {
+    referrerParam(referrer, "strait_link")
 }
 
-/// The tap id (`bridge_click`) inside a Play Install Referrer string, or nil.
+/// The tap id (`strait_click`) inside a Play Install Referrer string, or nil.
 /// Joins the install to the exact tap that sent the user to the store.
-public func parseBridgeClick(_ referrer: String?) -> String? {
-    guard let v = referrerParam(referrer, "bridge_click"), isClickId(v) else { return nil }
+public func parseStraitClick(_ referrer: String?) -> String? {
+    guard let v = referrerParam(referrer, "strait_click"), isClickId(v) else { return nil }
     return v
 }
 
@@ -117,7 +117,7 @@ private func referrerParam(_ referrer: String?, _ key: String) -> String? {
     return nil
 }
 
-/// A tap id as Bridge issues it (uuid); anything else is ignored.
+/// A tap id as Strait issues it (uuid); anything else is ignored.
 private let clickIdPattern = try! NSRegularExpression(
     pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\z", options: [.caseInsensitive]
 )
@@ -126,14 +126,14 @@ private func isClickId(_ v: String) -> Bool {
     clickIdPattern.firstMatch(in: v, range: NSRange(location: 0, length: (v as NSString).length)) != nil
 }
 
-/// A URL with its `bridge_click` tap id taken out (`takeClickId`).
+/// A URL with its `strait_click` tap id taken out (`takeClickId`).
 public struct ClickIdSplit: Equatable {
     public let url: String
     /// The tap id, lower-cased; nil when absent or malformed.
     public let clickId: String?
 }
 
-/// Remove every `bridge_click` parameter from a URL's query, keeping the rest
+/// Remove every `strait_click` parameter from a URL's query, keeping the rest
 /// of the URL byte-for-byte (fragment included). Returns the cleaned URL and
 /// the tap id (nil when absent or malformed). The app never sees the tap id.
 public func takeClickId(_ raw: String) -> ClickIdSplit {
@@ -146,7 +146,7 @@ public func takeClickId(_ raw: String) -> ClickIdSplit {
     let kept = beforeHash[beforeHash.index(after: q)...].components(separatedBy: "&").filter { pair in
         let eq = pair.range(of: "=")
         let key = eq.map { String(pair[..<$0.lowerBound]) } ?? pair
-        if decode(key) != "bridge_click" { return true }
+        if decode(key) != "strait_click" { return true }
         let v = decode(eq.map { String(pair[$0.upperBound...]) } ?? "")
         if isClickId(v) { clickId = v.lowercased() }
         return false
@@ -157,17 +157,17 @@ public func takeClickId(_ raw: String) -> ClickIdSplit {
 
 /// What a URL handed to the app means.
 public enum ClassifiedUrl: Equatable {
-    /// https on a Bridge link host → a short link; ask /v1/resolve (route `app_link`).
+    /// https on a Strait link host → a short link; ask /v1/resolve (route `app_link`).
     case shortLink
     /// The URL already carries the destination. `clickId` is the tap id from a
-    /// Bridge hand-off (removed from url/params), else nil.
+    /// Strait hand-off (removed from url/params), else nil.
     case destination(route: LinkRoute, url: String, path: String, params: [String: String], clickId: String?)
 }
 
-/// - https on a Bridge link host → `.shortLink`.
+/// - https on a Strait link host → `.shortLink`.
 /// - other https (a verified link on the customer's own site) → it IS the destination.
 /// - yourapp://host/path (browser hand-off) → destination https://host/path.
-/// A `bridge_click` tap id is removed from the destination and returned apart.
+/// A `strait_click` tap id is removed from the destination and returned apart.
 /// Returns nil for anything that isn't a URL.
 public func classifyUrl(_ raw: String, linkHosts: [String]) -> ClassifiedUrl? {
     guard let p0 = splitUrl(raw) else { return nil }

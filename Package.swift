@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "BridgeSDK",
+    name: "StraitSDK",
     platforms: [.iOS(.v13), .macOS(.v11)],
     products: [
-        .library(name: "BridgeSDK", targets: ["BridgeSDK"]),
+        .library(name: "StraitSDK", targets: ["StraitSDK"]),
     ],
     targets: [
-        .target(name: "BridgeSDK"),
+        .target(name: "StraitSDK"),
         .testTarget(
-            name: "BridgeSDKTests",
-            dependencies: ["BridgeSDK"],
+            name: "StraitSDKTests",
+            dependencies: ["StraitSDK"],
             resources: [.copy("test-vectors.json"), .copy("conformance-vectors.json")]
         ),
     ]

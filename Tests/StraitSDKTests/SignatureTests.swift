@@ -1,5 +1,5 @@
 import XCTest
-@testable import BridgeSDK
+@testable import StraitSDK
 
 /// Golden-vector parity with the server + every other SDK. If Swift drifts,
 /// deferred match breaks silently — this is the cross-language contract.
